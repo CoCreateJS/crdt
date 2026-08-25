@@ -13,7 +13,7 @@ Fork the [project on Github](https://github.com/CoCreate-app/CoCreate-crdt) and 
 ```
 git crdt https://github.com/contributor/CoCreate-crdt.git
 cd CoCreate-crdt
-git remote add upstream https://github.com/CoCreate-app/CoCreate-crdt.git
+git remote add upstream https://gitlab.com/cocreatejs/CoCreate-crdt.git
 ```
 
 ## Create a Topic Branch
