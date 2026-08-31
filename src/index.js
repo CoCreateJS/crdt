@@ -107,7 +107,7 @@ async function getObject(data) {
                         method: "object.read",
                         array: "crdt",
                         object: {
-                            $filter: {
+                            filter: {
                                 query: { name },
                                 limit: 1
                             }
@@ -343,7 +343,7 @@ function persistChange(data, change) {
                 key: data.key
             }
         },
-        $filter: {
+        filter: {
             query: { name },
             limit: 1
         },
@@ -694,7 +694,7 @@ async function createSnapshot(data, countThreshold = 5000, timeGracePeriodMs = 7
                 changeLog: object.changeLog, 
                 crud: { array: data.array, object: data.object, key: data.key }
             },
-            $filter: { query: { name }, limit: 1 },
+            filter: { query: { name }, limit: 1 },
             upsert: true,
             metadata: 'crdt-snapshot'
         });
