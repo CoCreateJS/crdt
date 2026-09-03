@@ -305,7 +305,7 @@ function broadcastChange(data) {
     crud.socket.send({
         method: "crdt",
         broadcastSender: false,
-        broadcastBrowser: true,
+        broadcastClient: true,
         data
     });
 }
@@ -352,7 +352,7 @@ function persistChange(data, change) {
         room: data.room,
         broadcast: data.broadcast,
         broadcastSender: data.broadcastSender,
-        broadcastBrowser: false,
+        broadcastClient: false,
         metadata: 'crdt-change'
     };
 
@@ -475,7 +475,7 @@ async function updateText(data, flag) {
                 room: data.room,
                 broadcast: data.broadcast,
                 broadcastSender: false,
-                broadcastBrowser: true,
+                broadcastClient: true,
                 metadata: 'crdt-updateobject'
             });
         }
