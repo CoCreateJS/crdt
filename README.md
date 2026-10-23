@@ -90,3 +90,77 @@ This software is dual-licensed under the GNU Affero General Public License versi
 -   **Commercial Use**: For-profit companies and individuals intending to use this software for commercial purposes must obtain a commercial license. The commercial license is available when you sign up for an API key on our [website](https://cocreate.app). This license permits proprietary use and modification of the software without the copyleft requirements of the AGPLv3. It is ideal for integrating this software into proprietary commercial products and applications.
 
 If you have not purchased a commercial license and intend to use this software for commercial purposes, you are required to sign up for an API key on our website.
+
+
+## Identity-based operation tracking
+
+Run `npm test` for isolated operation-engine tests with mocked transport and
+storage. New edits use operation format 2. The public `start`, `length`, and
+`value` interface still accepts JavaScript UTF-16 offsets, but each outgoing edit
+also captures:
+
+- Stable identities for the exact characters being deleted (`targets`).
+- The deleted text (`removedValue`).
+- Left/right neighbor identities and neighboring character values.
+- Stable identities for inserted characters, derived from operation ID and offset.
+
+Replay uses an anchored sequence with retained deletion markers. Two clients
+that both delete the same character therefore delete that identity twice, rather
+than deleting the next surviving character. Character values and neighboring
+text provide context, but are not used to guess which repeated character an
+operation meant. Concurrent insertion runs have deterministic ordering and remain
+contiguous. Operations whose anchor has not arrived remain pending in the sequence
+until that anchor arrives.
+
+Undo deletes only the characters created by its edit and removes only that edit's
+deletion markers. Another user's deletions and insertions remain intact. Redo
+inverts the undo operation. Text update events include the canonical `string`, a
+splice against the current visible text, and the original identity `operation`.
+Existing input/textarea consumers can therefore continue applying visible splices.
+
+Snapshots retain character identities, deleted anchors, deletion markers and
+processed operation IDs. Late identity edits can still target retained anchors.
+Snapshot persistence appends a checkpoint rather than replacing the stored log,
+so concurrent appends are not overwritten. Physical history/tombstone garbage
+collection is not implemented; the server history remains append-only.
+
+Simultaneous readers of the same uninitialized database field derive identical
+baseline IDs from the field scope and text, using SHA-256 through Web Crypto.
+Different initial field values still require application/server reconciliation.
+
+### Compatibility and limits
+
+All actively collaborating clients must be updated together to use format 2.
+Historical positional logs remain readable and are assigned deterministic
+identities during replay. The original author intent of already recorded,
+concurrent positional operations cannot be recovered after the fact. Old clients
+will not correctly interpret identity-based deletes, restores, or snapshots.
+
+Existing storage keys concatenate array/object/key; changing that format still
+needs a migration to remove potential key collisions. Identity metadata is
+retained for correctness and will grow with editing history. Large-document
+performance and safe physical garbage collection need further work.
+
+The tests cover concurrent deletes, repeated characters, concurrent insert/delete
+and replacement, selective undo, out-of-order and duplicate delivery, bootstrap,
+snapshot/reload, Unicode offsets and multi-writer convergence. They do not prove
+every possible schedule or test production transport, browser rendering, cursor
+mapping, authorization or persistence failure recovery. These changes do not
+modify CoCreate-text's DOM rendering or wire Markdown to CRDT automatically.
+
+## Typing runs
+
+See [the typing run contract](docs/operations.md). Concurrent runs at the same
+anchor are ordered by persisted `clientId`, then by their first operation's ID
+(`runId`) for runs from the same browser. No user ID, server election or new random
+run identifier participates. Insertion anchors preserve deliberate placement in
+already-observed content.
+
+Consecutive insertion-only operations continue a run when the next position and
+last character anchor both match. CRDT automatically ends it on a position break
+or an incoming edit that shifts or interrupts the run. `endRun({ array, object,
+key })` is optional for semantic boundaries without text operations, such as blur
+or submit. The optional boolean flags `runBreak` and
+`runEnd` establish boundaries on a particular edit. Run metadata persists with
+operations and snapshots. Local editing requires Socket Client to have initialized
+its `clientId` and `frameId`.
