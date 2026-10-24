@@ -238,7 +238,20 @@ function insertChange(data) {
     const nextLog = [...log, change].sort((a, b) => a.id.localeCompare(b.id));
     const sequence = replaySequence(nextLog);
     // Validate explicit post-edit selections before committing a text operation.
-    if (data.selection !== undefined) anchorSelection(sequence, data.selection);
+    if (data.selection !== undefined) {
+        try {
+            if (remote && !validSelectionSender(data)) throw new RangeError('Invalid selection sender.');
+            anchorSelection(sequence, data.selection);
+        } catch (error) {
+            if (!remote) throw error;
+            // Malformed ephemeral presence must not discard a valid text edit.
+            data = { ...data };
+            delete data.selection;
+            delete data.selectionClock;
+            delete change.selection;
+            delete change.selectionClock;
+        }
+    }
     if (remote) reconcileRuns(object, sequence.operations.get(change.id) || change, object.sequence, sequence);
     object.changeIds.add(change.id);
     object.changeLog = nextLog;
@@ -360,41 +373,84 @@ function receiveChange(data) {
     if (data.type === 'selection') {
         const object = objects[getName(data)];
         if (object?.sequence) {
-            rememberSelection(object, data);
-            publishSelections(object);
+            if (rememberSelection(object, data)) publishSelections(object);
         }
     } else insertChange(data);
 }
 
+function validSelectionSender(data) {
+    return typeof data.clientId === 'string' && !!data.clientId &&
+        typeof data.frameId === 'string' && !!data.frameId &&
+        Number.isSafeInteger(data.selectionClock) && data.selectionClock > 0;
+}
+
 function rememberSelection(object, data) {
+    if (!validSelectionSender(data)) return false;
     object.selections ||= new Map();
     const sender = JSON.stringify([data.clientId, data.frameId]);
     const previous = object.selections.get(sender);
-    if (previous && previous.selectionClock >= data.selectionClock) return;
-    object.selections.set(sender, { ...data, selection: anchorSelection(object.sequence, data.selection) });
+    if (previous && previous.selectionClock >= data.selectionClock) return false;
+    try {
+        object.selections.set(sender, { ...data,
+            selection: anchorSelection(object.sequence, data.selection),
+            presence: data.presence ? { ...data.presence } : undefined });
+        return true;
+    } catch {
+        return false;
+    }
 }
 
-function publishSelections(object) {
+/** Current presence, resolved against the latest committed source. No DOM access. */
+function getSelections(data) {
+    const object = objects[getName(data)];
+    if (!object?.sequence) return [];
+    return selectionDetails(object);
+}
+
+function selectionDetails(object) {
+    const result = [];
     for (const data of object.selections?.values() || []) {
         const resolved = resolveSelection(object.sequence, data.selection);
         if (resolved === undefined) continue;
+        result.push({ array: data.array, object: data.object, key: data.key,
+            clientId: data.clientId, frameId: data.frameId, socketId: data.socketId,
+            selection: anchorSelection(object.sequence, data.selection), resolved,
+            presence: data.presence ? { ...data.presence } : undefined });
+    }
+    return result;
+}
+
+/** Cached local selection; undefined until reported, null after clearing. */
+function getSelection(data) {
+    const object = objects[getName(data)];
+    const sender = JSON.stringify([data.clientId ?? getClientId(), data.frameId ?? frameId]);
+    const entry = object?.selections?.get(sender);
+    return entry ? resolveSelection(object.sequence, entry.selection) : undefined;
+}
+
+function publishSelections(object) {
+    for (const detail of selectionDetails(object)) {
         window.dispatchEvent(new CustomEvent('cocreate-crdt-selection', {
-            detail: { array: data.array, object: data.object, key: data.key,
-                clientId: data.clientId, frameId: data.frameId, socketId: data.socketId,
-                selection: data.selection, resolved, presence: data.presence }
+            detail
         }));
     }
 }
 
 /** Share selection without modifying text, history, or persisted document data. */
 async function updateSelection(data) {
-    const object = await getObject(data);
+    // Loaded fields anchor immediately, before a remote edit can change offsets.
+    let object = objects[getName(data)];
+    if (!object?.sequence || object.loading) object = await getObject(data);
     if (!object) return;
     if (!getClientId() || !frameId) throw new Error('Socket Client must initialize before sharing selection.');
     const payload = { array: data.array, object: data.object, key: data.key,
         clientId: getClientId(), frameId, type: 'selection', presence: data.presence,
-        selection: anchorSelection(object.sequence, data.selection), selectionClock: ++selectionClock };
-    clearRun(object, getClientId(), frameId);
+        selection: anchorSelection(object.sequence, data.selection) };
+    const previous = object.selections?.get(JSON.stringify([payload.clientId, frameId]));
+    const samePosition = previous && JSON.stringify(previous.selection) === JSON.stringify(payload.selection);
+    if (samePosition && JSON.stringify(previous.presence) === JSON.stringify(payload.presence)) return;
+    payload.selectionClock = ++selectionClock;
+    if (!samePosition) clearRun(object, getClientId(), frameId);
     rememberSelection(object, payload);
     broadcastChange(payload);
     publishSelections(object);
@@ -645,4 +701,4 @@ function endRun(data) {
     clearRun(objects[getName(data)], getClientId(), frameId);
 }
 
-export default { init, objects, getName, getText, updateText, replaceText, undoText, redoText, viewVersion, createSnapshot, endRun, updateSelection };
+export default { init, objects, getName, getText, updateText, replaceText, undoText, redoText, viewVersion, createSnapshot, endRun, updateSelection, getSelection, getSelections };

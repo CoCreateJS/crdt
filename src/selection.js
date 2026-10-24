@@ -1,8 +1,14 @@
 // Selection offsets are UTF-16 source offsets, just like text operations.
 // Both neighbors survive deletion as tombstones. Affinity chooses a side when
 // concurrent text is inserted into the same gap.
+// Replay creates a new sequence for each text change. Share one source-offset
+// index across all participants resolving against that immutable sequence.
+const selectionOffsets = new WeakMap();
 export function anchorSelection(state, selection) {
     if (selection === null) return null;
+    if (!selection || typeof selection !== 'object' ||
+        !('anchor' in selection) || !('head' in selection))
+        throw new RangeError('Invalid CRDT selection.');
     const endpoint = value => {
         if (typeof value === 'object' && value !== null) {
             if (!['left', 'right'].includes(value.affinity) ||
@@ -27,12 +33,19 @@ export function resolveSelection(state, selection) {
             (point.right && !state.nodes.has(point.right))) return undefined;
         const id = point.affinity === 'right' ? point.right : point.left;
         if (id === null) return point.affinity === 'right' ? state.visible.length : 0;
-        let offset = 0;
-        for (const node of state.order) {
-            if (node.id === id) return offset + (point.affinity === 'left' && !node.deletedBy.size ? 1 : 0);
-            if (!node.deletedBy.size) offset++;
+        let offsets = selectionOffsets.get(state);
+        if (!offsets) {
+            offsets = new Map();
+            let offset = 0;
+            for (const node of state.order) {
+                offsets.set(node.id, offset);
+                if (!node.deletedBy.size) offset++;
+            }
+            selectionOffsets.set(state, offsets);
         }
-        return undefined;
+        const offset = offsets.get(id);
+        if (offset === undefined) return undefined;
+        return offset + (point.affinity === 'left' && !state.nodes.get(id).deletedBy.size ? 1 : 0);
     };
     const anchor = endpoint(selection.anchor), head = endpoint(selection.head);
     if (anchor === undefined || head === undefined) return undefined;

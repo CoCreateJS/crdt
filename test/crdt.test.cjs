@@ -31,7 +31,7 @@ function setup({ read, ids, frame = 'local', client = frame } = {}) {
     const runs = fs.readFileSync('src/runs.js','utf8').replace(/^export /gm,'');
     vm.runInContext(sequence + '\n' + selection + '\n' + runs + '\n' + source,context);
     return { api: context.api, events, packets, requests, socket: crud.socket,
-        remote: data => listeners.crdt({ data: structuredClone(data) }) };
+        remote: (data, socketId) => listeners.crdt({ data: structuredClone(data), socketId }) };
 }
 
 test('read=false initializes and preserves empty text after deleting all content', async () => {
@@ -485,4 +485,67 @@ test('selection references survive snapshots and undo of deleted neighbors', asy
     await s.api.undoText(field);
     selection=s.events.filter(e=>e.type==='cocreate-crdt-selection').at(-1).detail;
     assert.deepEqual({...selection.resolved},{anchor:1,head:1,start:1,end:1});
+});
+
+test('loaded selections anchor synchronously and resolve locally after a remote edit', async () => {
+    const a=setup({frame:'a'}), b=setup({frame:'b'});
+    await a.api.updateText({...field,start:0,value:'abc'});
+    await b.api.getText(field); b.remote(a.packets[0].data, 'socket-a');
+    const sharing=b.api.updateSelection({...field,selection:{anchor:3,head:1}});
+    assert.deepEqual({...b.api.getSelection(field)},{anchor:3,head:1,start:1,end:3});
+    await a.api.updateText({...field,start:0,value:'X'});
+    b.remote(a.packets[1].data, 'socket-a');
+    await sharing;
+    assert.deepEqual({...b.api.getSelection(field)},{anchor:4,head:2,start:2,end:4});
+    await b.api.updateSelection({...field,selection:null});
+    assert.equal(b.api.getSelection(field),null);
+});
+
+test('presence snapshots preserve identity, resolve late subscriptions and protect stored anchors', async () => {
+    const a=setup({frame:'a'}), b=setup({frame:'b'});
+    await a.api.updateText({...field,start:0,value:'abc',selection:{anchor:1,head:2},presence:{userName:'Alice'}});
+    await b.api.getText(field); b.remote(a.packets[0].data,'socket-a');
+    const entry=b.api.getSelections(field)[0];
+    assert.equal(entry.socketId,'socket-a');
+    assert.equal(entry.presence.userName,'Alice');
+    assert.deepEqual({...entry.resolved},{anchor:1,head:2,start:1,end:2});
+    entry.selection.anchor.left='tampered'; entry.presence.userName='tampered';
+    assert.equal(b.api.getSelections(field)[0].presence.userName,'Alice');
+    assert.equal(b.api.getSelections(field)[0].resolved.anchor,1);
+});
+
+test('duplicate cursor reports do not send packets or split a typing run', async () => {
+    const s=setup();
+    const presence={userName:'Writer'};
+    await s.api.updateText({...field,start:0,value:'a',selection:{anchor:1,head:1},presence});
+    const count=s.packets.length;
+    await s.api.updateSelection({...field,selection:{anchor:1,head:1},presence});
+    assert.equal(s.packets.length,count);
+    await s.api.updateSelection({...field,selection:{anchor:1,head:1},presence:{userName:'Renamed'}});
+    assert.equal(s.packets.length,count+1);
+    await s.api.updateText({...field,start:1,value:'b'});
+    assert.equal(s.packets.at(-1).data.runId,s.packets[0].data.runId);
+});
+
+test('malformed presence clocks and references cannot overwrite known selections', async () => {
+    const a=setup({frame:'a'}), b=setup({frame:'b'});
+    await a.api.updateText({...field,start:0,value:'abc',selection:{anchor:1,head:1}});
+    await b.api.getText(field); b.remote(a.packets[0].data,'socket-a');
+    const good=a.packets[0].data;
+    for(const selectionClock of [undefined,0,-1,NaN,Infinity,'100'])
+        b.remote({...good,type:'selection',selectionClock,selection:null},'socket-a');
+    b.remote({...good,type:'selection',selectionClock:2,selection:{}},'socket-a');
+    assert.equal(b.api.getSelections(field)[0].resolved.anchor,1);
+    await a.api.updateSelection({...field,selection:{anchor:3,head:3}});
+    b.remote(a.packets.at(-1).data,'socket-a');
+    assert.equal(b.api.getSelections(field)[0].resolved.anchor,3);
+});
+
+test('invalid presence in a text packet never drops its valid text operation', async () => {
+    const a=setup({frame:'a'}), b=setup({frame:'b'});
+    await a.api.updateText({...field,start:0,value:'abc',selection:{anchor:1,head:1}});
+    await b.api.getText(field);
+    b.remote({...a.packets[0].data,selection:{},selectionClock:Infinity},'socket-a');
+    assert.equal(await b.api.getText(field),'abc');
+    assert.equal(b.api.getSelections(field).length,0);
 });

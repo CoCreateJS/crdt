@@ -121,15 +121,31 @@ or saving an already-applied text edit.
 
 A text operation and its selection share one packet and history entry.
 `updateSelection` sends `type: 'selection'` without a text operation ID, document
-save, or undo entry. It also ends the local typing run. A per-frame
+save, or undo entry. A changed position ends the local typing run; duplicate
+positions are suppressed and metadata-only updates preserve the run. A per-frame
 `selectionClock` prevents older packets from replacing a newer selection.
 Selection-only updates are transient and are not restored from document history.
 Optional `presence` carries display metadata such as userName and cursor colors.
 
 `cocreate-crdt-selection` exposes `selection` references and a `resolved`
 `{ anchor, head, start, end }` for the current source text (null for blur).
-Known selections are resolved again after subsequent edits. The Text adapter
-captures the browser selection and suppresses duplicate position messages during
-CRDT rendering. Cursors consumes the resolved event; its existing `cursor`
-socket listener remains available for legacy callers. These modules must be
-updated together; rendered DOM/source mapping still uses CoCreate Selection.
+Known selections are resolved again after subsequent edits. Editor owns browser
+selection capture and source-to-DOM mapping; its `cursors.js` renders remote
+presence. CRDT owns transport for both text and presence. Editor surfaces do not
+need the legacy Cursors package or Selection's former HTML-string position APIs.
+
+For loaded fields, `updateSelection` anchors and caches the selection synchronously
+before returning its Promise. `crdt.getSelection({array, object, key})` synchronously
+returns the current local `{anchor, head, start, end}`, `undefined` before capture
+or while references are unresolved, and `null` after clearing. Optional `clientId`
+and `frameId` select another participant. Editor can restore the cached local
+selection after a remote edit without rereading its source position from the DOM.
+
+`crdt.getSelections({array, object, key})` returns current resolved presence entries
+in the same shape as the selection event, including cleared entries. This lets a
+newly bound editor display presence already known to CRDT. Returned anchor and
+metadata objects are copied. One offset index per replayed sequence serves all
+participants, including tombstone anchors.
+
+Incoming presence requires a valid participant/frame and a positive safe-integer
+clock. Invalid presence is ignored without dropping an accompanying text operation.

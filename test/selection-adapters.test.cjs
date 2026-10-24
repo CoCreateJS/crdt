@@ -8,7 +8,7 @@ test('Text captures the resulting selection once and suppresses duplicate cursor
     const adapter=source.slice(source.indexOf('let previousPosition'),source.indexOf('function updateElements'))
         .replace('export function','function');
     const listeners={}, edits=[],positions=[];
-    const element={tagName:'TEXTAREA',start:2,end:2,hasAttribute:()=>true};
+    const element={tagName:'TEXTAREA',start:2,end:2,hasAttribute:()=>true,ownerDocument:{documentElement:{}}};
     const context=vm.createContext({
         window:{addEventListener:(name,fn)=>listeners[name]=fn},
         getAttributes:()=>({array:'notes',object:'record',key:'content'}),
@@ -32,21 +32,18 @@ test('Text captures the resulting selection once and suppresses duplicate cursor
     assert.deepEqual({...positions[0].selection},{anchor:3,head:0});
 });
 
-test('Selection exposes direction for inputs and DOM ranges',()=>{
-    const source=fs.readFileSync('../CoCreate-selection/src/index.js','utf8').replace(/\r\n/g,'\n');
-    const fn=source.slice(source.indexOf('export function getSelection'),source.indexOf('function getNodePosition'))
-        .replace('export function','function');
-    const context=vm.createContext({console, captureSelection:()=>null});
-    vm.runInContext(fn+'\nfunction getNodePosition(node,element,offset){return offset;}\nglobalThis.readSelection=getSelection;',context);
+test('Editor owns native selection direction and delegates rich selection to its source mapper',async()=>{
+    const source=fs.readFileSync('../CoCreate-editor/src/adapters.js','utf8');
+    const fn=source.slice(source.indexOf('export async function getSelection'),source.indexOf('export async function setSelection'))
+        .replace('export async function','async function');
+    const richSelection={anchor:4,head:1,from:1,to:4,empty:false,type:'text'};
+    const context=vm.createContext({isFrame:()=>false,
+        isNative:element=>element.tagName==='TEXTAREA',native:{has:()=>true},
+        rich:{getSelection:()=>richSelection}});
+    vm.runInContext(fn+'\nglobalThis.readSelection=getSelection;',context);
     const input={tagName:'TEXTAREA',selectionStart:1,selectionEnd:4,selectionDirection:'backward'};
-    assert.deepEqual({...context.readSelection(input)},{start:1,end:4,anchor:4,head:1});
-    const host={htmlString:'abcdef',textContent:'abcdef'};
-    const node={nodeType:3,textContent:'abcdef',parentElement:{closest:()=>host}};
-    const range={startContainer:node,endContainer:node,startOffset:1,endOffset:4};
-    const selection={rangeCount:1,getRangeAt:()=>range,anchorNode:node,anchorOffset:4,isCollapsed:false,toString:()=> 'bcd'};
-    host.ownerDocument={getSelection:()=>selection};
-    const result=context.readSelection(host);
-    assert.equal(result.anchor,4);assert.equal(result.head,1);
+    assert.deepEqual({...await context.readSelection(input)},richSelection);
+    assert.equal(await context.readSelection({tagName:'DIV'}),richSelection);
 });
 
 test('Cursors consumes resolved CRDT selection and blur from the same update path',()=>{
