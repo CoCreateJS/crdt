@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const field = { array: 'notes', object: 'record', key: 'content', read: 'false' };
+const field = { array: 'notes', object: 'record', key: 'content', read: 'false', realtime: true };
 function setup({ read, ids, frame = 'local', client = frame } = {}) {
     let counter = 0;
     const events = [], packets = [], requests = [], listeners = {};
@@ -25,12 +25,12 @@ function setup({ read, ids, frame = 'local', client = frame } = {}) {
         window: { dispatchEvent: event => events.push(event) }
     });
     const source = fs.readFileSync('src/index.js','utf8').replace(/\r\r\n/g,'\n')
-        .replace(/^import .*;\n/gm,'').replace(/export default (.*);/, 'globalThis.api = $1;');
+        .replace(/^import .*;\n/gm,'').replace(/export default (.*);/, 'globalThis.api = $1; globalThis.internal = { objects, getName, viewVersion, createSnapshot };');
     const sequence = fs.readFileSync('src/sequence.js','utf8').replace(/^export /gm,'');
     const selection = fs.readFileSync('src/selection.js','utf8').replace(/^export /gm,'');
     const runs = fs.readFileSync('src/runs.js','utf8').replace(/^export /gm,'');
     vm.runInContext(sequence + '\n' + selection + '\n' + runs + '\n' + source,context);
-    return { api: context.api, events, packets, requests, socket: crud.socket,
+    return { api: context.api, internal: context.internal, events, packets, requests, socket: crud.socket,
         remote: (data, socketId) => listeners.crdt({ data: structuredClone(data), socketId }) };
 }
 
@@ -50,7 +50,7 @@ test('IDs reach peers, duplicates apply once and remote packets are not rebroadc
     packet.frameId='other';peer.remote(packet);peer.remote(packet);
     assert.equal(await peer.api.getText(field),'A');
     assert.equal(peer.packets.length,0);
-    assert.equal(peer.api.objects[peer.api.getName(field)].changeLog.length,1);
+    assert.equal(peer.internal.objects[peer.internal.getName(field)].changeLog.length,1);
 });
 
 test('out-of-order delivery converges to ordered replay without duplicate edits', async () => {
@@ -58,7 +58,7 @@ test('out-of-order delivery converges to ordered replay without duplicate edits'
     const op=(id,start,value)=>({...field,id:String(id).padStart(26,'0'),frameId:'remote',start,value});
     s.remote(op(1,0,'A'));s.remote(op(3,2,'C'));s.remote(op(2,1,'B'));
     assert.equal(await s.api.getText(field),'ABC');
-    assert.equal((await s.api.viewVersion({...field})).value,'ABC');
+    assert.equal((await s.internal.viewVersion({...field})).value,'ABC');
 });
 
 test('whole replacements notify, broadcast, preserve history and await saving', async () => {
@@ -67,7 +67,7 @@ test('whole replacements notify, broadcast, preserve history and await saving', 
     assert.equal(await s.api.getText(field),'new');
     assert.equal(s.events.at(-1).detail.string,'new');
     assert.equal(s.packets.length,2);
-    assert.equal(s.api.objects[s.api.getName(field)].changeLog.length,2);
+    assert.equal(s.internal.objects[s.internal.getName(field)].changeLog.length,2);
 });
 
 test('undo and redo invert middle replacements and leave a dense operation log', async () => {
@@ -76,9 +76,9 @@ test('undo and redo invert middle replacements and leave a dense operation log',
     assert.equal(await s.api.getText(field),'abXYef');
     await s.api.undoText(field);assert.equal(await s.api.getText(field),'abcdef');
     await s.api.redoText(field);assert.equal(await s.api.getText(field),'abXYef');
-    const log=s.api.objects[s.api.getName(field)].changeLog;
+    const log=s.internal.objects[s.internal.getName(field)].changeLog;
     assert.equal(log.length,4);assert.ok(log.every(Boolean));
-    assert.equal((await s.api.viewVersion({...field})).value,'abXYef');
+    assert.equal((await s.internal.viewVersion({...field})).value,'abXYef');
 });
 
 test('parallel initial reads share one load and retain remote arrivals during loading', async () => {
@@ -219,16 +219,16 @@ test('identity snapshots retain deleted anchors, accept delayed edits and reload
     const s=setup();await s.api.getText(field);s.remote(base);
     await s.api.updateText({...field,start:0,length:1,value:''});
     await s.api.updateText({...field,start:2,length:0,value:'!'});
-    const compacted=await s.api.createSnapshot({...field,save:'false'},2,0);
+    const compacted=await s.internal.createSnapshot({...field,save:'false'},2,0);
     assert.ok(compacted[0].sequence);
     s.remote(late.packets[0].data);
     assert.equal(await s.api.getText(field),'Xbc!');
-    const log=s.api.objects[s.api.getName(field)].changeLog;
+    const log=s.internal.objects[s.internal.getName(field)].changeLog;
     const reloaded=setup({read:r=>({object:r.array==='crdt'?[{changeLog:structuredClone(log)}]:[]})});
     assert.equal(await reloaded.api.getText({...field,read:'true'}),'Xbc!');
-    const count=reloaded.api.objects[reloaded.api.getName(field)].changeLog.length;
+    const count=reloaded.internal.objects[reloaded.internal.getName(field)].changeLog.length;
     reloaded.remote(late.packets[0].data);
-    assert.equal(reloaded.api.objects[reloaded.api.getName(field)].changeLog.length,count);
+    assert.equal(reloaded.internal.objects[reloaded.internal.getName(field)].changeLog.length,count);
 });
 
 test('concurrent replacements delete only observed characters and preserve both inserted runs', async () => {
@@ -249,7 +249,7 @@ test('snapshot persistence appends identity state instead of overwriting concurr
     const s=setup();await s.api.updateText({...field,start:0,value:'abc'});
     await s.api.updateText({...field,start:1,length:1,value:''});
     await s.api.updateText({...field,start:2,value:'!'});
-    await s.api.createSnapshot(field,2,0);
+    await s.internal.createSnapshot(field,2,0);
     const request=s.requests.find(r=>r.metadata==='crdt-snapshot');
     assert.ok(request.object['$push.changeLog'].sequence);
     assert.equal(request.object.changeLog,undefined);
@@ -335,7 +335,7 @@ test('four client typing runs stay grouped and ordered by client ID in reversed 
         const p=setup();await p.api.getText(field);
         for(const op of order)p.remote(op);
         assert.equal(await p.api.getText(field),'aAAABBBCCCDDDbc');
-        assert.equal((await p.api.viewVersion(field)).value,'aAAABBBCCCDDDbc');
+        assert.equal((await p.internal.viewVersion(field)).value,'aAAABBBCCCDDDbc');
     }
 });
 
@@ -418,7 +418,7 @@ test('edits carry the actual backward selection using identities in one packet',
 
 test('selection-only movements and clearing do not save text or change undo history', async () => {
     const s=setup();await s.api.updateText({...field,start:0,value:'abc'});
-    const writes=s.requests.length, object=s.api.objects[s.api.getName(field)];
+    const writes=s.requests.length, object=s.internal.objects[s.internal.getName(field)];
     await s.api.updateSelection({...field,selection:{anchor:1,head:2}});
     await s.api.updateSelection({...field,selection:null});
     assert.equal(s.packets.at(-1).data.type,'selection');
@@ -478,7 +478,7 @@ test('selection references survive snapshots and undo of deleted neighbors', asy
     await s.api.updateSelection({...field,selection:{anchor:3,head:1}});
     await s.api.updateText({...field,start:1,length:2,value:''});
     await s.api.updateText({...field,start:2,value:'!'});
-    await s.api.createSnapshot(field,2,0);
+    await s.internal.createSnapshot(field,2,0);
     await s.api.updateText({...field,start:0,value:'X'});
     let selection=s.events.filter(e=>e.type==='cocreate-crdt-selection').at(-1).detail;
     assert.deepEqual({...selection.resolved},{anchor:2,head:2,start:2,end:2});
@@ -548,4 +548,37 @@ test('invalid presence in a text packet never drops its valid text operation', a
     b.remote({...a.packets[0].data,selection:{},selectionClock:Infinity},'socket-a');
     assert.equal(await b.api.getText(field),'abc');
     assert.equal(b.api.getSelections(field).length,0);
+});
+
+test('private drafts retain CRDT history without notifying peers or storage', async () => {
+    const s=setup({frame:null,client:null});
+    const element={id:'editor-a'};
+    const draft={...field,realtime:false,scope:'editor-a',initialValue:'abc',element};
+    const other={...field,realtime:false,scope:'editor-b',initialValue:'abc'};
+    assert.equal(await s.api.getText(draft),'abc');
+    assert.equal(await s.api.getText(other),'abc');
+    await s.api.updateText({...draft,start:1,value:'X'});
+    assert.equal(await s.api.getText(draft),'aXbc');
+    assert.equal(await s.api.getText(other),'abc');
+    await s.api.undoText(draft);
+    assert.equal(await s.api.getText(draft),'abc');
+    await s.api.redoText(draft);
+    assert.equal(await s.api.getText(draft),'aXbc');
+    assert.deepEqual(s.events.map(event=>event.detail.string),['aXbc','abc','aXbc']);
+    assert.ok(s.events.every(event=>event.detail.elements[0]===element));
+    assert.equal(s.packets.length,0);
+    assert.equal(s.requests.length,0);
+});
+
+test('realtime must be explicitly true before CRDT publishes a change', async () => {
+    const s=setup();
+    const local={array:'notes',object:'record',key:'content',read:'false',scope:'editor'};
+    await s.api.updateText({...local,start:0,value:'draft'});
+    assert.equal(await s.api.getText(local),'draft');
+    assert.equal(s.packets.length,0);
+    assert.equal(s.requests.length,0);
+    assert.equal(s.events.length,0);
+    await s.api.replaceText({...field,value:'published'});
+    assert.equal(s.packets.length,1);
+    assert.equal(s.events.at(-1).detail.string,'published');
 });

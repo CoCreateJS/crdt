@@ -64,6 +64,8 @@ function nextId(minimum = '') {
     throw new Error('CRDT operation ID exhausted.');
 }
 
+const isRealtime = data => data.realtime === true || data.realtime === 'true';
+
 
 /**
  * Pure helper function to replace String.prototype.customSplice.
@@ -87,21 +89,6 @@ function spliceString(str, index, count, add) {
 }
 
 /**
- * Initializes a CRDT session for a specific document field.
- * Fetches the initial text state and sets the local frame context.
- *
- * @param {CRDTData} data - The document tracking configuration.
- */
-function init(data) {
-    return getText(data).then(value => {
-        data.value = value;
-        data.start = 0;
-        data['frameId'] = frameId;
-        localChange(data, value);
-    });
-}
-
-/**
  * Retrieves the internal CRDT tracking object for a specific field.
  * If it doesn't exist locally, it queries the database for the changelog.
  *
@@ -117,7 +104,7 @@ async function getObject(data) {
     object.pendingChanges = [];
     object.loading = (async () => {
         let changeLog = [];
-        if (data.read !== 'false' && !data.newObject) {
+        if (!data.scope && data.read !== 'false' && !data.newObject) {
             const response = await crud.send({
                 method: 'object.read', array: 'crdt',
                 object: { filter: { query: { name }, limit: 1 } }
@@ -129,6 +116,13 @@ async function getObject(data) {
         object.undoStack = [];
         object.redoStack = [];
         object.changeLog = [...new Map(changeLog.filter(Boolean).map(change => [change.id, { ...change }])).values()];
+        if (data.scope && data.initialValue && !object.changeLog.length) {
+            object.changeLog.push({
+                id: nextId(), start: 0, length: 0, value: String(data.initialValue),
+                type: 'insert', history: true, clientId: getClientId() || 'local',
+                frameId: frameId || 'local'
+            });
+        }
         object.changeIds = new Set(object.changeLog.flatMap(change => [change.id, ...(change.seenIds || [])]));
         await generateText(data, true);
         for (const change of object.pendingChanges.splice(0)) receiveChange(change);
@@ -152,7 +146,7 @@ async function generateText(data, flag) {
     object.changeLog.sort((a, b) => a.id.localeCompare(b.id));
     object.sequence = replaySequence(object.changeLog);
     object.text = object.sequence.text;
-    if (!object.changeLog.length && data.read !== 'false') {
+    if (!data.scope && !object.changeLog.length && data.read !== 'false') {
         await checkDb(data, flag);
     }
     return object.text;
@@ -205,7 +199,7 @@ async function checkDb(data, flag) {
  * insertChange({ array: "users", object: "123", key: "bio", value: "A", start: 0 });
  */
 function insertChange(data) {
-    const { captureSelection, ...payloadData } = data;
+    const { captureSelection, element, ...payloadData } = data;
     data = payloadData;
     const object = objects[getName(data)];
     if (!object?.changeLog) return false;
@@ -215,19 +209,25 @@ function insertChange(data) {
         history: data.history,
         id: data.id || nextId(object.changeLog.at(-1)?.id), value: data.value || '', start: data.start,
         length: data.length || 0,
-        clientId: remote ? data.clientId : getClientId(), frameId: data.frameId || frameId,
+        clientId: remote ? data.clientId : getClientId() || (data.scope && 'local'),
+        frameId: data.frameId || frameId || (data.scope && 'local'),
         user_id: data.user_id || localStorage.getItem('user_id'),
         type: data.value ? 'insert' : 'delete'
     };
     if (!Number.isInteger(change.start) || change.start < 0 ||
         !Number.isInteger(change.length) || change.length < 0 ||
         typeof change.value !== 'string') throw new RangeError('Invalid CRDT text operation.');
-    if (!remote && !change.history && (!change.clientId || !change.frameId))
+    if (!remote && !data.scope && !change.history && (!change.clientId || !change.frameId))
         throw new Error('Socket Client must initialize clientId and frameId before editing.');
     const log = object.changeLog;
     if (object.changeIds.has(change.id)) return false;
     if (change.format !== 2 && log[0]?.type === 'snapshot' && change.id <= log[0].id) {
-        if (!remote) localChange({ ...data, start: 0, length: object.text.length, value: object.text }, object.text);
+        if (!remote) {
+            const detail = { ...data, start: 0, length: object.text.length, value: object.text, string: object.text };
+            if (element && !isRealtime(data))
+                localChange({ ...detail, elements: [element] }, object.text);
+            else if (isRealtime(data)) localChange(detail, object.text);
+        }
         return false;
     }
     const before = object.text || '';
@@ -271,7 +271,11 @@ function insertChange(data) {
     }
     // Apply text first so editor adapters can report the actual resulting selection.
     const payload = { ...data, ...change };
-    localChange({ ...payload, ...textDiff(before, object.text), operation: change }, object.text);
+    const detail = { ...payload, ...textDiff(before, object.text), operation: change,
+        string: object.text };
+    if (element && !remote && !isRealtime(data))
+        localChange({ ...detail, elements: [element] }, object.text);
+    else if (remote || isRealtime(data)) localChange(detail, object.text);
     let selection = data.selection;
     if (!remote && captureSelection) {
         // An adapter failure must never prevent an already-applied edit reaching peers.
@@ -285,9 +289,9 @@ function insertChange(data) {
         change.selectionClock = payload.selectionClock;
         rememberSelection(object, payload);
     }
-    if (!remote) broadcastChange(payload);
-    publishSelections(object);
-    if (!remote && data.save !== 'false') persistChange(data, change);
+    if (!remote && isRealtime(data)) broadcastChange(payload);
+    if (remote || isRealtime(data)) publishSelections(object);
+    if (!remote && isRealtime(data) && data.save !== 'false') persistChange(data, change);
     return true;
 }
 
@@ -442,18 +446,22 @@ async function updateSelection(data) {
     let object = objects[getName(data)];
     if (!object?.sequence || object.loading) object = await getObject(data);
     if (!object) return;
-    if (!getClientId() || !frameId) throw new Error('Socket Client must initialize before sharing selection.');
+    if (isRealtime(data) && (!getClientId() || !frameId))
+        throw new Error('Socket Client must initialize before sharing selection.');
     const payload = { array: data.array, object: data.object, key: data.key,
-        clientId: getClientId(), frameId, type: 'selection', presence: data.presence,
+        clientId: getClientId() || 'local', frameId: frameId || 'local',
+        realtime: data.realtime, type: 'selection', presence: data.presence,
         selection: anchorSelection(object.sequence, data.selection) };
-    const previous = object.selections?.get(JSON.stringify([payload.clientId, frameId]));
+    const previous = object.selections?.get(JSON.stringify([payload.clientId, payload.frameId]));
     const samePosition = previous && JSON.stringify(previous.selection) === JSON.stringify(payload.selection);
     if (samePosition && JSON.stringify(previous.presence) === JSON.stringify(payload.presence)) return;
     payload.selectionClock = ++selectionClock;
-    if (!samePosition) clearRun(object, getClientId(), frameId);
+    if (!samePosition) clearRun(object, payload.clientId, payload.frameId);
     rememberSelection(object, payload);
-    broadcastChange(payload);
-    publishSelections(object);
+    if (isRealtime(data)) {
+        broadcastChange(payload);
+        publishSelections(object);
+    }
 }
 
 /**
@@ -519,7 +527,7 @@ async function updateText(data) {
     if (object) {
         if (!insertChange({ ...data })) return;
 
-        if (data.crud !== 'false' && data.save !== 'false') {
+        if (isRealtime(data) && data.crud !== 'false' && data.save !== 'false') {
             if (data.upsert === undefined) data.upsert = true;
 
             let wholestring = await getText(data);
@@ -668,7 +676,7 @@ async function createSnapshot(data, countThreshold = 5000, timeGracePeriodMs = 7
     object.redoStack.length = 0;
 
     // 5. Persist the newly compressed array to the database
-    if (data.save !== "false") {
+    if (isRealtime(data) && data.save !== "false") {
         crud.send({
             method: 'object.update',
             array: 'crdt',
@@ -693,12 +701,14 @@ async function createSnapshot(data, countThreshold = 5000, timeGracePeriodMs = 7
  * @returns {string} Concatenated namespace/document/key string.
  */
 function getName(data) {
-    return `${data.array}${data.object}${data.key}`;
+    const name = `${data.array}${data.object}${data.key}`;
+    return data.scope ? `${name}\0${data.scope}` : name;
 }
 
 /** End the current local typing run after an explicit caret move, blur or action. */
 function endRun(data) {
-    clearRun(objects[getName(data)], getClientId(), frameId);
+    clearRun(objects[getName(data)], getClientId() || (data.scope && 'local'),
+        frameId || (data.scope && 'local'));
 }
 
-export default { init, objects, getName, getText, updateText, replaceText, undoText, redoText, viewVersion, createSnapshot, endRun, updateSelection, getSelection, getSelections };
+export default { getText, updateText, replaceText, undoText, redoText, updateSelection, getSelection, getSelections, endRun };

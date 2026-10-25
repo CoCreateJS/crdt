@@ -92,6 +92,20 @@ This software is dual-licensed under the GNU Affero General Public License versi
 If you have not purchased a commercial license and intend to use this software for commercial purposes, you are required to sign up for an API key on our website.
 
 
+## Public API
+
+Everyday text operations are `getText`, `updateText`, `replaceText`, `undoText`,
+and `redoText`. Each receives an object containing `array`, `object`, and `key`.
+`updateText` additionally accepts `start`, `length`, and `value`; `replaceText`
+accepts the complete replacement `value`. `getText` initializes field state when
+needed, so a separate initialization method is unnecessary.
+
+Editor integration also uses `updateSelection`, `getSelection`, `getSelections`,
+and `endRun` for presence, selection restoration, and typing boundaries.
+
+The mutable registry, identifier construction, version reconstruction, and
+snapshot maintenance stay internal. They are not part of the default public API.
+
 ## Identity-based operation tracking
 
 Run `npm test` for isolated operation-engine tests with mocked transport and

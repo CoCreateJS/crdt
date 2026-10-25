@@ -55,13 +55,21 @@ its intent (for example a standalone paste). There is no idle timeout or heurist
 that assumes every multi-character input is a paste.
 
 ```js
-await crdt.updateText({ array, object, key, start: 0, value: 'H' });
-await crdt.updateText({ array, object, key, start: 1, value: 'i' });
+await crdt.updateText({ array, object, key, realtime: true, start: 0, value: 'H' });
+await crdt.updateText({ array, object, key, realtime: true, start: 1, value: 'i' });
 // These operations share the first operation's ID as runId, with indexes 0 and 1.
 crdt.endRun({ array, object, key });
-await crdt.updateText({ array, object, key, start: 2, value: '!' });
+await crdt.updateText({ array, object, key, realtime: true, start: 2, value: '!' });
 // This operation starts a new run with its own ID.
 ```
+
+Only `realtime: true` publishes an operation to other elements, the socket, or
+storage. A private editor can provide a stable, editor-specific `scope` and
+`initialValue` to keep its history in memory. It can also provide the originating
+`element`; CRDT returns the update event with that element as its sole target.
+The element reference is excluded from the history log and socket packet. Undo
+and redo use the same scope. A Save action can publish the completed string with
+a separate realtime `replaceText` call against the shared array/object/key.
 
 ## Ordering
 
@@ -98,11 +106,11 @@ that edit, with directional UTF-16 offsets:
 
 ```js
 await crdt.updateText({
-    array, object, key, start: 0, value: 'hello',
+    array, object, key, realtime: true, start: 0, value: 'hello',
     selection: { anchor: 5, head: 2 }
 });
-await crdt.updateSelection({ array, object, key, selection: { anchor: 2, head: 2 } });
-await crdt.updateSelection({ array, object, key, selection: null }); // blur/hide
+await crdt.updateSelection({ array, object, key, realtime: true, selection: { anchor: 2, head: 2 } });
+await crdt.updateSelection({ array, object, key, realtime: true, selection: null }); // blur/hide
 ```
 
 Each endpoint becomes `{ left, right, affinity }`, where left and right are
