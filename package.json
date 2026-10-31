@@ -41,9 +41,9 @@
     "url": "git+https://github.com/cocreatejs/CoCreate-crdt.git"
   },
   "bugs": {
-    "url": "https://github.com/CoCreate-app/CoCreate-crdt/issues"
+    "url": "https://github.com/CoCreateJS/CoCreate-crdt/issues"
   },
-  "homepage": "https://cocreate.app/docs/crdt",
+  "homepage": "https://CoCreateJS.com/docs/crdt",
   "funding": {
     "type": "GitHub Sponsors \u2764",
     "url": "https://github.com/sponsors/CoCreate-app"
