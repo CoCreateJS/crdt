@@ -79,6 +79,8 @@ const isRealtime = data => data.realtime === true || data.realtime === 'true';
  *
  * @example
  * spliceString("Hello World", 6, 5, "CRDT"); // Returns "Hello CRDT"
+ * @private
+ * @environment client
  */
 function spliceString(str, index, count, add) {
     if (index < 0) {
@@ -94,6 +96,8 @@ function spliceString(str, index, count, add) {
  *
  * @param {CRDTData} data - The document tracking configuration.
  * @returns {Promise<Object|undefined>} The tracked object containing text and changelogs.
+ * @private
+ * @environment client
  */
 async function getObject(data) {
     if (['_id', 'organization_id'].includes(data.key)) return;
@@ -140,6 +144,8 @@ async function getObject(data) {
  * @param {CRDTData} data - The document tracking configuration.
  * @param {boolean} flag - Whether to fetch from DB if empty.
  * @returns {Promise<string>} The rebuilt text string.
+ * @private
+ * @environment client
  */
 async function generateText(data, flag) {
     const object = objects[getName(data)];
@@ -158,6 +164,8 @@ async function generateText(data, flag) {
  * @param {CRDTData} data - The document tracking configuration.
  * @param {boolean|string} flag - Whether to insert the fetched text as a base change.
  * @returns {Promise<string>} The base text string.
+ * @private
+ * @environment client
  */
 async function checkDb(data, flag) {
     let { array, object, key } = data;
@@ -197,6 +205,8 @@ async function checkDb(data, flag) {
  *
  * @example
  * insertChange({ array: "users", object: "123", key: "bio", value: "A", start: 0 });
+ * @private
+ * @environment client
  */
 function insertChange(data) {
     const { captureSelection, element, ...payloadData } = data;
@@ -299,6 +309,8 @@ function insertChange(data) {
  * Broadcasts a local change to other connected browser clients via WebSocket.
  *
  * @param {CRDTData} data - The change payload.
+ * @private
+ * @environment client
  */
 function broadcastChange(data) {
     crud.socket.send({
@@ -314,6 +326,8 @@ function broadcastChange(data) {
  *
  * @param {CRDTData} data - The change payload.
  * @param {string} string - The newly calculated full text string.
+ * @private
+ * @environment client
  */
 function localChange(data, string) {
     const localChange = new CustomEvent('cocreate-crdt-update', {
@@ -327,6 +341,8 @@ function localChange(data, string) {
  *
  * @param {CRDTData} data - The change payload.
  * @param {Object} change - The generated ULID change object.
+ * @private
+ * @environment client
  */
 function persistChange(data, change) {
     let name = getName(data);
@@ -404,7 +420,9 @@ function rememberSelection(object, data) {
     }
 }
 
-/** Current presence, resolved against the latest committed source. No DOM access. */
+/** Current presence, resolved against the latest committed source. No DOM access.  * @public
+ * @environment client
+ */
 function getSelections(data) {
     const object = objects[getName(data)];
     if (!object?.sequence) return [];
@@ -424,7 +442,9 @@ function selectionDetails(object) {
     return result;
 }
 
-/** Cached local selection; undefined until reported, null after clearing. */
+/** Cached local selection; undefined until reported, null after clearing.  * @public
+ * @environment client
+ */
 function getSelection(data) {
     const object = objects[getName(data)];
     const sender = JSON.stringify([data.clientId ?? getClientId(), data.frameId ?? frameId]);
@@ -440,7 +460,9 @@ function publishSelections(object) {
     }
 }
 
-/** Share selection without modifying text, history, or persisted document data. */
+/** Share selection without modifying text, history, or persisted document data.  * @public
+ * @environment client
+ */
 async function updateSelection(data) {
     // Loaded fields anchor immediately, before a remote edit can change offsets.
     let object = objects[getName(data)];
@@ -468,6 +490,8 @@ async function updateSelection(data) {
  * Syncs entire CRDT states from a remote source, often used for initial connection.
  *
  * @param {Object} data - The sync payload from the server.
+ * @private
+ * @environment client
  */
 function sync(data) {
     if (data.clientId === getClientId()) return;
@@ -498,6 +522,8 @@ function sync(data) {
  *
  * @param {CRDTData} data - The document tracking configuration.
  * @returns {Promise<string>} The current text value.
+ * @public
+ * @environment client
  */
 async function getText(data) {
     const object = await getObject(data);
@@ -509,6 +535,8 @@ async function getText(data) {
  * Used for copy/paste or programmatic overwrites.
  *
  * @param {CRDTData} data - Payload containing the new replacement string.
+ * @public
+ * @environment client
  */
 async function replaceText(data) {
     const object = await getObject(data);
@@ -521,6 +549,8 @@ async function replaceText(data) {
  * for systems not listening to raw CRDT streams.
  *
  * @param {CRDTData} data - The change payload.
+ * @public
+ * @environment client
  */
 async function updateText(data) {
     let object = await getObject(data);
@@ -557,13 +587,17 @@ async function updateText(data) {
  * @param {CRDTData} data - The data context.
  * @param {Object} change - The change object to invert.
  * @returns {Object} An object containing the inverted data and change payloads.
+ * @private
+ * @environment client
  */
 function createChange(data, object, change) {
     return inverseChange(object.sequence, object.sequence.operations.get(change.id) || change,
         nextId(object.changeLog.at(-1)?.id), data);
 }
 
-/** Undo only characters and deletion markers owned by a local edit. */
+/** Undo only characters and deletion markers owned by a local edit.  * @public
+ * @environment client
+ */
 async function undoText(data) {
     const object = await getObject(data);
     const id = object?.undoStack.at(-1);
@@ -574,7 +608,9 @@ async function undoText(data) {
     return updateText({ ...inverse, undoOf: id });
 }
 
-/** Redo by inverting the previous undo operation. */
+/** Redo by inverting the previous undo operation.  * @public
+ * @environment client
+ */
 async function redoText(data) {
     const object = await getObject(data);
     const id = object?.redoStack.at(-1);
@@ -591,6 +627,8 @@ async function redoText(data) {
  *
  * @param {CRDTData} data - Contains version number target.
  * @returns {Promise<Object>} The rebuilt document state at that point in time.
+ * @private
+ * @environment client
  */
 async function viewVersion(data) {
     try {
@@ -617,6 +655,8 @@ async function viewVersion(data) {
  * @param {number} [countThreshold=5000] - Minimum log size before triggering snapshot.
  * @param {number} [timeGracePeriodMs=604800000] - 7 days in ms. Older offline users lose their anchor.
  * @returns {Promise<Array|undefined>} The newly compressed changelog.
+ * @private
+ * @environment client
  */
 async function createSnapshot(data, countThreshold = 5000, timeGracePeriodMs = 7 * 24 * 60 * 60 * 1000) {
     let name = getName(data);
@@ -699,16 +739,27 @@ async function createSnapshot(data, countThreshold = 5000, timeGracePeriodMs = 7
  *
  * @param {CRDTData} data - The routing payload.
  * @returns {string} Concatenated namespace/document/key string.
+ * @private
+ * @environment client
  */
 function getName(data) {
     const name = `${data.array}${data.object}${data.key}`;
     return data.scope ? `${name}\0${data.scope}` : name;
 }
 
-/** End the current local typing run after an explicit caret move, blur or action. */
+/** End the current local typing run after an explicit caret move, blur or action.  * @public
+ * @environment client
+ */
 function endRun(data) {
     clearRun(objects[getName(data)], getClientId() || (data.scope && 'local'),
         frameId || (data.scope && 'local'));
 }
 
 export default { getText, updateText, replaceText, undoText, redoText, updateSelection, getSelection, getSelections, endRun };
+
+/**
+ * CoCreate crdt
+ *
+ * @module crdt
+ * @environment client
+ */

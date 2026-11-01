@@ -7,29 +7,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "cocreate": {
-    "environment": [
-      "client"
-    ],
-    "interface": {
-      "schemaVersion": 1,
-      "summary": "CoCreate crdt",
-      "source": "src/index.js",
-      "api": {
-        "exports": [
-          "endRun",
-          "getSelection",
-          "getSelections",
-          "getText",
-          "redoText",
-          "replaceText",
-          "undoText",
-          "updateSelection",
-          "updateText"
-        ]
-      }
-    }
-  },
   "scripts": {
     "start": "webpack --config webpack.config.js",
     "build": "webpack --mode=production --config webpack.config.js",
