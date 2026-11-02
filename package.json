@@ -15,15 +15,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cocreatejs/CoCreate-crdt.git"
+    "url": "git+https://github.com/CoCreateJS/crdt.git"
   },
   "bugs": {
-    "url": "https://github.com/CoCreateJS/CoCreate-crdt/issues"
+    "url": "https://github.com/CoCreateJS/crdt/issues"
   },
   "homepage": "https://CoCreateJS.com/docs/crdt",
   "funding": {
     "type": "GitHub Sponsors \u2764",
-    "url": "https://github.com/sponsors/CoCreate-app"
+    "url": "https://github.com/sponsors/CoCreateJS"
   },
   "main": "./src/index.js",
   "dependencies": {
