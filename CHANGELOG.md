@@ -1,3 +1,30 @@
+# [2.0.0](https://github.com/CoCreateJS/crdt/compare/v1.29.2...v2.0.0) (2026-11-02)
+
+
+### Bug Fixes
+
+* add Deno specific entries to .gitignore ([ca12522](https://github.com/CoCreateJS/crdt/commit/ca12522f6e5423f25d92e6a2abff4de4c01c843b))
+* bump [@cocreate](https://github.com/cocreate) dependencies ([fede1ee](https://github.com/CoCreateJS/crdt/commit/fede1eea895b1afc32df91013b883436980c1d2c))
+* bump [@cocreate](https://github.com/cocreate) package versions ([4c4e7d6](https://github.com/CoCreateJS/crdt/commit/4c4e7d6f1269575c6b74b9cef57f98034e4e18ec))
+* bump versions ([473db99](https://github.com/CoCreateJS/crdt/commit/473db99d5762efb144656369e193e5da06b22b05))
+* bump versions ([6c4ccdf](https://github.com/CoCreateJS/crdt/commit/6c4ccdf1a257e0519c576a4264fd87f755eaa6c3))
+* remove trailing slash from node_modules entry in .gitignore ([0eb5a1a](https://github.com/CoCreateJS/crdt/commit/0eb5a1a8bbc69f7d8edd2f1c0075d7987b5141dd))
+* replace legacy $filter field with filter ([ed9c2bd](https://github.com/CoCreateJS/crdt/commit/ed9c2bd18b4b4819edc2e36fefd87c5c62edc620))
+* update git url ([2837ee9](https://github.com/CoCreateJS/crdt/commit/2837ee9f7e1e5b38a5d298d4293d72d7ef8e914e))
+* update GitHub Actions to use latest versions and sync package.json description ([8fe7596](https://github.com/CoCreateJS/crdt/commit/8fe7596377dfca92c23872947f9453654e1b7d77))
+
+
+### Features
+
+* align CoCreate repository and package naming ([d508eb1](https://github.com/CoCreateJS/crdt/commit/d508eb1c55d178ed4001e80d82be7fe68a80228d))
+* refactor CRDT logic and enhance snapshot functionality ([6d497a1](https://github.com/CoCreateJS/crdt/commit/6d497a1c61db8f5f2fb48b2fdfb621397bc1acee))
+* support scoped local editor histories ([abeed53](https://github.com/CoCreateJS/crdt/commit/abeed53f48093a4fe79e6f68e2d81280582499ee))
+
+
+### BREAKING CHANGES
+
+* consumers must use the renamed CoCreate package and repository identities; the previous prefixed names are no longer supported.
+
 ## [1.29.2](https://github.com/CoCreateJS/CoCreate-crdt/compare/v1.29.1...v1.29.2) (2026-07-19)
 
 

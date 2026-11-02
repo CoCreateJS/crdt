@@ -1,6 +1,6 @@
 {
   "name": "@cocreate/crdt",
-  "version": "1.34.0",
+  "version": "2.0.0",
   "description": "CoCreate crdt",
   "author": "CoCreate LLC",
   "license": "AGPL-3.0",
@@ -22,7 +22,7 @@
   },
   "homepage": "https://CoCreateJS.com/docs/crdt",
   "funding": {
-    "type": "GitHub Sponsors \u2764",
+    "type": "GitHub Sponsors ❤",
     "url": "https://github.com/sponsors/CoCreateJS"
   },
   "main": "./src/index.js",
