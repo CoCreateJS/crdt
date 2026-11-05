@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/CoCreateJS/crdt/compare/v2.0.0...v2.0.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* upgrade CoCreate dependencies to v2 ([ffa0197](https://github.com/CoCreateJS/crdt/commit/ffa0197ebe6af7dca3e83a9451151a3957f5ca9a))
+
 # [2.0.0](https://github.com/CoCreateJS/crdt/compare/v1.29.2...v2.0.0) (2026-11-02)
 
 
