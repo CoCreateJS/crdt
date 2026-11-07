@@ -27,12 +27,12 @@
   },
   "main": "./src/index.js",
   "dependencies": {
-    "@cocreate/crud": "^2.0.0",
-    "@cocreate/local-storage": "^2.0.0",
-    "@cocreate/utils": "^2.0.0"
+    "@cocreate/crud": "^0.0.0-stage",
+    "@cocreate/local-storage": "^2.0.1",
+    "@cocreate/utils": "^2.0.2"
   },
   "devDependencies": {
-    "@cocreate/webpack": "^2.0.0"
+    "@cocreate/webpack": "^2.0.1"
   },
   "allowScripts": {
     "@cocreate/actions@1.21.4": true,
