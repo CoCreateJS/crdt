@@ -20,7 +20,7 @@
 // you must obtain a commercial license from CoCreate LLC.
 // For details, visit <https://CoCreateJS.com/licenses/> or contact us at sales@CoCreateJS.com.
 
-import crud from '@cocreate/crud-client';
+import { crudClient as crud } from '@cocreate/crud/client';
 import { ulid, ulidDecode } from '@cocreate/utils';
 import localStorage from '@cocreate/local-storage';
 import { prepareChange, replaySequence, inverseChange, textDiff } from './sequence.js';
