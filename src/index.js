@@ -22,7 +22,6 @@
 
 import { crudClient as crud } from '@cocreate/crud/client';
 import { ulid, ulidDecode } from '@cocreate/utils';
-import localStorage from '@cocreate/local-storage';
 import { prepareChange, replaySequence, inverseChange, textDiff } from './sequence.js';
 import { anchorSelection, resolveSelection } from './selection.js';
 import { assignRun, clearRun, reconcileRuns } from './runs.js';
@@ -221,7 +220,7 @@ function insertChange(data) {
         length: data.length || 0,
         clientId: remote ? data.clientId : getClientId() || (data.scope && 'local'),
         frameId: data.frameId || frameId || (data.scope && 'local'),
-        user_id: data.user_id || localStorage.getItem('user_id'),
+        user_id: data.user_id || globalThis.localStorage?.getItem('user_id'),
         type: data.value ? 'insert' : 'delete'
     };
     if (!Number.isInteger(change.start) || change.start < 0 ||
